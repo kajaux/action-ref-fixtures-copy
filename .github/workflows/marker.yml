@@ -1,4 +1,4 @@
-name: Direct marker A
+name: Direct marker B
 on:
   workflow_call:
     inputs:
@@ -107,7 +107,7 @@ jobs:
             }
           })(process.env).catch(() => { console.error('Direct collector reporting failed'); process.exitCode = 1; });
           COMMITISH_NODE
-      - run: printf '%s\n' 'COMMITISH_MARKER=A'
+      - run: printf '%s\n' 'COMMITISH_MARKER=B'
       - id: nested
         uses: kajaux/action-ref-fixtures-copy@nested-action-both-failed-2
       - name: Intentional first-attempt failure
@@ -122,7 +122,7 @@ jobs:
           COMMITISH_CASE: ${{ inputs.case_id }}
           COMMITISH_PHASE: completed
           COMMITISH_STATUS: ${{ job.status }}
-          COMMITISH_MARKER: A
+          COMMITISH_MARKER: B
           COMMITISH_ACTION_MARKER: ${{ steps.nested.outputs.marker }}
         run: |
           /home/runner/externals/node24/bin/node --input-type=commonjs <<'COMMITISH_NODE'
