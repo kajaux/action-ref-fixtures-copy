@@ -1,4 +1,4 @@
-name: Direct marker C
+name: Direct marker A
 on:
   workflow_call:
     inputs:
@@ -13,7 +13,7 @@ permissions:
   id-token: write
 jobs:
   marker:
-    runs-on: ubuntu-latest
+    runs-on: commitish-queue-arm64
     timeout-minutes: 3
     steps:
       - name: Report started directly to collector
@@ -24,7 +24,7 @@ jobs:
           COMMITISH_STATUS: ${{ job.status }}
           COMMITISH_MARKER: ''
         run: |
-          node --input-type=commonjs <<'COMMITISH_NODE'
+          /home/runner/externals/node24/bin/node --input-type=commonjs <<'COMMITISH_NODE'
           (async function reportJob(env, fetcher = fetch) {
             const endpoint = 'https://commitish.kjanat.dev';
             const experiment = env.COMMITISH_EXPERIMENT ?? '';
@@ -107,7 +107,9 @@ jobs:
             }
           })(process.env).catch(() => { console.error('Direct collector reporting failed'); process.exitCode = 1; });
           COMMITISH_NODE
-      - run: printf '%s\n' 'COMMITISH_MARKER=C'
+      - run: printf '%s\n' 'COMMITISH_MARKER=A'
+      - id: nested
+        uses: kajaux/action-ref-fixtures-copy@nested-action-workflow-job-1
       - name: Report completed directly to collector
         if: ${{ always() }}
         env:
@@ -115,10 +117,11 @@ jobs:
           COMMITISH_CASE: ${{ inputs.case_id }}
           COMMITISH_PHASE: completed
           COMMITISH_STATUS: ${{ job.status }}
-          COMMITISH_MARKER: C
+          COMMITISH_MARKER: A
+          COMMITISH_ACTION_MARKER: ${{ steps.nested.outputs.marker }}
         run: |
-          node --input-type=commonjs <<'COMMITISH_NODE'
-          (async function reportJob(env, fetcher = fetch) {
+          /home/runner/externals/node24/bin/node --input-type=commonjs <<'COMMITISH_NODE'
+          const reportJob = (async function reportJob(env, fetcher = fetch) {
             const endpoint = 'https://commitish.kjanat.dev';
             const experiment = env.COMMITISH_EXPERIMENT ?? '';
             if (!/^[a-f0-9-]{36}$/.test(experiment)) throw new Error('Invalid experiment ID');
@@ -198,5 +201,22 @@ jobs:
               if (attempt === 11) throw new Error(`Collector unavailable or grant missing: HTTP ${status}`);
               await new Promise((resolve)=>setTimeout(resolve, 2000));
             }
-          })(process.env).catch(() => { console.error('Direct collector reporting failed'); process.exitCode = 1; });
+          });
+          (async function reportNestedJob(env, transport = fetch) {
+            const actionMarker = env.COMMITISH_ACTION_MARKER;
+            if (env.COMMITISH_PHASE !== 'completed' || !/^[AB]$/.test(actionMarker ?? '')) {
+              throw new Error('Nested completion requires an observed action marker');
+            }
+            await reportJob(env, async (url, init)=>{
+              if (init?.method === 'POST') {
+                const event = JSON.parse(String(init.body));
+                event.data.actionMarker = actionMarker;
+                return await transport(url, {
+                  ...init,
+                  body: JSON.stringify(event)
+                });
+              }
+              return await transport(url, init);
+            });
+          })(process.env).catch(() => { console.error('Nested collector reporting failed'); process.exitCode = 1; });
           COMMITISH_NODE
